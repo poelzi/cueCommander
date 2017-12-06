@@ -152,11 +152,13 @@ def splitcue(infile, format, codec=None):
     print(cuesheet)
     print("splitting files")
     outdir = os.path.dirname(infile) or "."
+    inname = os.path.basename(infile)
 
-    check_call(["shntool", "split", "-d", outdir,
+    check_call(["shntool", "split", 
                 "-o", "flac",
-                "-f", infile,
-                cuesheet.file])
+                "-f", inname,
+                cuesheet.file.replace('"', '')],
+                cwd=outdir)
     # tag files
 
     # get global tags
