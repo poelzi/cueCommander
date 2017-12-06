@@ -5,6 +5,8 @@ import json
 import sys
 import os
 import os.path
+import shutil
+from subprocess import check_call
 from pprint import pprint
 
 DEFAULT_PRINT_HEADER = '%performer% - %title%\n%file%\n%tracks%'
@@ -137,10 +139,65 @@ def cue2tags(infile, outfile, codec=None):
             end = start + 60
         print('{}\t{}\t{}'.format(start, end, json.dumps(data)))
 
+def splitcue(infile, format, codec=None):
+    cuesheet = cueparser.CueSheet()
+    cuesheet.setOutputFormat(DEFAULT_PRINT_HEADER, DEFAULT_PRINT_TRACK)
+
+    with open(infile, "r", encoding=codec) as f:
+        buffer = f.read()
+        #u8 = buffer.decode(codec or 'utf-8')
+        cuesheet.setData(buffer)
+
+    cuesheet.parse()
+    print(cuesheet)
+    print("splitting files")
+    outdir = os.path.dirname(infile) or "."
+
+    check_call(["shntool", "split", "-d", outdir,
+                "-o", "flac",
+                "-f", infile,
+                cuesheet.file])
+    # tag files
+
+    # get global tags
+    gtags = {}
+    for line in cuesheet.rem.splitlines():
+        chunks = line.split(maxsplit=2)
+        if len(chunks) < 3:
+            continue
+        gtags[chunks[1]] = chunks[2].replace('"', '')
+
+    #import IPython
+    #IPython.embed()
+    move_targets = {}
+    print("tagging split files")
+    for i, track in enumerate(cuesheet.tracks):
+        sn = os.path.join(outdir, "split-track%02d.flac" % track.number)
+        args = ["metaflac", sn]
+        tags = {}
+        tags.update(gtags)
+        if track.number:
+            tags['NUMBER'] = track.number
+        if track.title:
+            tags['TITLE'] = track.title.replace('"', '')
+        if track.performer:
+            tags['ARTIST'] = track.performer.replace('"', '')
+        if track.songwriter:
+            tags['SONGWRITER'] = track.songwriter.replace('"', '')
+        fname = os.path.join(outdir, format.format(**tags))
+        move_targets[sn] = fname
+        for k,v in tags.items():
+            args.append("--set-tag=%s=%s" %(k, v))
+        print(args)
+        check_call(args)
+    print("moving files")
+    for s, d in move_targets.items():
+        print("%s -> %s" %(s, d))
+        shutil.move(s, d)
 
 def parse_args():
     parser = argparse.ArgumentParser(description='cueCommander cuesheet tools')
-    subparsers = parser.add_subparsers(dest='audacity')
+    subparsers = parser.add_subparsers(dest='todo')
 
     parser_auda = subparsers.add_parser('taglist', help='converts from/to audacity tagslits')
     auda_todo = parser_auda.add_mutually_exclusive_group(required=True)
@@ -151,19 +208,21 @@ def parse_args():
     parser_auda.add_argument('--codec', dest='codec', default='utf-8',
                     help='codec of input file')
 
-    
-
-    parser_auda.add_argument('input', help='input file')
-    parser_auda.add_argument('output', help='output file', nargs='?', default=None)
-
+    parser_split = subparsers.add_parser('split', help='splits wav/flac files into tracks')
+    parser_split.add_argument('input', help='input file')
+    parser_split.add_argument('--format', help='format for output files',
+                              default="{NUMBER:02d} - {TITLE}.flac")
+    parser_split.add_argument('--codec', dest='codec', default='utf-8',
+                    help='codec of input file')
     args = parser.parse_args()
 
-    if args.audacity == 'taglist':
+    if args.todo == 'taglist':
         if args.to_cue == False:
             cue2tags(args.input, args.output, codec=args.codec)
         else:
             tags2cue(args.input, args.output, codec=args.codec)
-
+    elif args.todo == 'split':
+        splitcue(args.input, args.format)
             
 
 
