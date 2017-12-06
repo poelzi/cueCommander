@@ -143,7 +143,7 @@ def splitcue(infile, format, codec=None):
     cuesheet = cueparser.CueSheet()
     cuesheet.setOutputFormat(DEFAULT_PRINT_HEADER, DEFAULT_PRINT_TRACK)
 
-    with open(infile, "r", encoding=codec) as f:
+    with open(infile, "r") as f:
         buffer = f.read()
         #u8 = buffer.decode(codec or 'utf-8')
         cuesheet.setData(buffer)
@@ -162,11 +162,11 @@ def splitcue(infile, format, codec=None):
     # get global tags
     gtags = {}
     for line in cuesheet.rem.splitlines():
-        chunks = line.split(maxsplit=2)
+        chunks = str(line).split(" ", 2)
         if len(chunks) < 3:
             continue
         gtags[chunks[1]] = chunks[2].replace('"', '')
-
+    gtags['ALBUM'] = cuesheet.title
     #import IPython
     #IPython.embed()
     move_targets = {}
@@ -177,7 +177,7 @@ def splitcue(infile, format, codec=None):
         tags = {}
         tags.update(gtags)
         if track.number:
-            tags['NUMBER'] = track.number
+            tags['TRACKNUMBER'] = track.number
         if track.title:
             tags['TITLE'] = track.title.replace('"', '')
         if track.performer:
@@ -211,7 +211,7 @@ def parse_args():
     parser_split = subparsers.add_parser('split', help='splits wav/flac files into tracks')
     parser_split.add_argument('input', help='input file')
     parser_split.add_argument('--format', help='format for output files',
-                              default="{NUMBER:02d} - {TITLE}.flac")
+                              default="{TRACKNUMBER:02d} - {TITLE}.flac")
     parser_split.add_argument('--codec', dest='codec', default='utf-8',
                     help='codec of input file')
     args = parser.parse_args()
