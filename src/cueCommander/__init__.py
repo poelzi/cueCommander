@@ -139,6 +139,45 @@ def cue2tags(infile, outfile, codec=None):
             end = start + 60
         print('{}\t{}\t{}'.format(start, end, json.dumps(data)))
 
+def escape_filename(fname):
+    return fname.replace("/", "-")
+
+def cmptracks(a, b):
+    cm = 0
+    for field in ["performer", "songwriter", "title"]:
+        cm = cmp(getattr(a, field, None), getattr(b, field, None))
+        print field, getattr(a, field, None), getattr(b, field, None), cm
+        if cm != 0:
+            return cm
+    return cm
+
+
+def formatcue(infile, format, unique=False, txt_header=None, txt_track=None):
+    cuesheet = cueparser.CueSheet()
+    cuesheet.setOutputFormat(txt_header or DEFAULT_PRINT_HEADER, txt_track or DEFAULT_PRINT_TRACK)
+
+    with open(infile, "r") as f:
+        buffer = f.read()
+        #u8 = buffer.decode(codec or 'utf-8')
+        cuesheet.setData(buffer)
+
+    cuesheet.parse()
+    if unique:
+        new_tracks = []
+        for track in cuesheet.tracks:
+            # ineffient, who cares :)
+            new = True
+            for xtrack in new_tracks:
+                if cmptracks(xtrack, track) == 0:
+                    new = False
+                    break
+            if new:
+                new_tracks.append(track)
+        cuesheet.tracks = new_tracks
+
+    print(cuesheet)
+
+
 def splitcue(infile, format, codec=None):
     cuesheet = cueparser.CueSheet()
     cuesheet.setOutputFormat(DEFAULT_PRINT_HEADER, DEFAULT_PRINT_TRACK)
@@ -163,11 +202,12 @@ def splitcue(infile, format, codec=None):
 
     # get global tags
     gtags = {}
-    for line in cuesheet.rem.splitlines():
-        chunks = str(line).split(" ", 2)
-        if len(chunks) < 3:
-            continue
-        gtags[chunks[1]] = chunks[2].replace('"', '')
+    if cuesheet.rem:
+        for line in cuesheet.rem.splitlines():
+            chunks = str(line).split(" ", 2)
+            if len(chunks) < 3:
+                continue
+            gtags[chunks[1]] = chunks[2].replace('"', '')
     gtags['ALBUM'] = cuesheet.title
     #import IPython
     #IPython.embed()
@@ -186,7 +226,7 @@ def splitcue(infile, format, codec=None):
             tags['ARTIST'] = track.performer.replace('"', '')
         if track.songwriter:
             tags['SONGWRITER'] = track.songwriter.replace('"', '')
-        fname = os.path.join(outdir, format.format(**tags))
+        fname = os.path.join(outdir, escape_filename(format.format(**tags)))
         move_targets[sn] = fname
         for k,v in tags.items():
             args.append("--set-tag=%s=%s" %(k, v))
@@ -216,6 +256,19 @@ def parse_args():
                               default="{TRACKNUMBER:02d} - {TITLE}.flac")
     parser_split.add_argument('--codec', dest='codec', default='utf-8',
                     help='codec of input file')
+
+    parser_split = subparsers.add_parser('format', help='formats cue files into different formats')
+    parser_split.add_argument('input', help='input file')
+    parser_split.add_argument('--format', help='output format',
+                              default="text", choices=["text"])
+    parser_split.add_argument('--txt-header', help='header format for text output',
+                              default=DEFAULT_PRINT_HEADER)
+    parser_split.add_argument('--txt-tracks', help='header format for text output',
+                              default=DEFAULT_PRINT_TRACK)
+    parser_split.add_argument('-u','--unique', dest="unique", help='remove duplicates',
+                              action="store_true")
+
+
     args = parser.parse_args()
 
     if args.todo == 'taglist':
@@ -225,6 +278,8 @@ def parse_args():
             tags2cue(args.input, args.output, codec=args.codec)
     elif args.todo == 'split':
         splitcue(args.input, args.format)
+    elif args.todo == 'format':
+        formatcue(args.input, args.format, unique=args.unique, txt_header=args.txt_header, txt_track=args.txt_tracks)
             
 
 
